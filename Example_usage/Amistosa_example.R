@@ -26,7 +26,7 @@ progressr::handlers(global = TRUE)
 # --------------------------
 # 1) Download & unpack data
 # --------------------------
-tar_url <- "https://zenodo.org/records/18624044/files/Amistosa_soundscape.tar"
+tar_url <- "https://zenodo.org/records/18778160/files/Amistosa_soundscape.tar"
 
 tmp_dir <- tempfile("amistosa_audio_")
 dir.create(tmp_dir, recursive = TRUE)
@@ -109,8 +109,7 @@ data("labeled_data", package = "ANECO")
 # (Optional) quick class balance inspection
 labeled_data %>%
   group_by(Category) %>%
-  summarise(n = dplyr::n(), .groups = "drop") %>%
-  print()
+  summarise(sum(dif))
 
 model_list <- soundclassifier_fit(
   ref = labeled_data,
@@ -145,32 +144,41 @@ perf_internal <- metrics_from_cm(cm_internal)
 print(perf_internal)
 
 # --------------------------
-# 6) Predict rain over Amistosa example + external evaluation (optional)
+# 6) Predict rain over Amistosa example + external evaluation
 # --------------------------
+
 df2 <- soundclassifier_predict(data = ind_df, mod = model_list$model)
 
-# OPTIONAL: If you have a manual label file for the 180 minutes, set the path here.
-# (This keeps your manuscript logic but removes hardcoded absolute paths.)
-manual_labels_path <- NULL
-# manual_labels_path <- "path/to/Labeled_example.xlsx"
+# GitHub raw CSV URL
+manual_labels_url <- "https://raw.githubusercontent.com/TELESIG/ANECO/main/Example_usage/Amistosa_labeled_example.csv"
 
-if (!is.null(manual_labels_path)) {
-  real <- rio::import(manual_labels_path)
-  
-  cm_external <- caret::confusionMatrix(
-    data = df2$predicted_class,
-    reference = as.factor(real$Category)
-  )
-  print(cm_external)
-  
-  perf_external <- metrics_from_cm(cm_external)
-  print(perf_external)
-}
+# download ground-truth data
+ground_truth <- read.csv(manual_labels_url, stringsAsFactors = TRUE, sep = ";")
+
+ground_truth$Category <- as.factor(ground_truth$Category)
+
+# Confusion matrix
+cm_external <- caret::confusionMatrix(
+  data = df2$predicted_class,
+  reference = ground_truth$Category,
+  positive = "Rain"
+)
+
+print(cm_external)
+
+# performance metrics
+perf_external <- data.frame(
+  Accuracy  = unname(cm_external$overall["Accuracy"]),
+  Precision = unname(cm_external$byClass["Pos Pred Value"]),
+  Recall    = unname(cm_external$byClass["Sensitivity"]),
+  F1        = unname(cm_external$byClass["F1"])
+)
+
+print(perf_external)
 
 # --------------------------
 # 7) Filter out predicted rain minutes and refit models (Figure 2)
 # --------------------------
-# Safer join: explicit key (avoid accidental multi-column joins)
 merged_df <- left_join(
   df2,
   ind_df,
